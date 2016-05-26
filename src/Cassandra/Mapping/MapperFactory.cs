@@ -298,7 +298,7 @@ namespace Cassandra.Mapping
             
             // Invoke the converter:
             // converter(poco.SomeFieldOrProp)
-            return Expression.Call(converter.Target == null ? null : Expression.Constant(converter.Target), converter.Method, getValueFromPoco);
+            return Expression.Call(converter.Target == null ? null : Expression.Constant(converter.Target), GetMethod(converter), getValueFromPoco);
         }
 
         public object AdaptValue(PocoData pocoData, PocoColumn column, object value)
@@ -355,7 +355,7 @@ namespace Cassandra.Mapping
             {
                 // Invoke the converter function on getValueT (taking into account whether it's a static method):
                 //     converter(row.GetValue<T>(columnIndex));
-                convertedValue = Expression.Call(converter.Target == null ? null : Expression.Constant(converter.Target), converter.Method, getValueT);
+                convertedValue = Expression.Call(converter.Target == null ? null : Expression.Constant(converter.Target), GetMethod(converter), getValueT);
             }
             Expression defaultValue;
             // Cassandra will return null for empty collections, so make an effort to populate collection properties on the POCO with
@@ -382,7 +382,7 @@ namespace Cassandra.Mapping
                 return false;
 
             // See if the POCO's type if something we can create an empty collection for
-            if (pocoDestType.IsInterface == false)
+            if (!pocoDestType.IsInterfaceLocal())
             {
                 // If an array, we know we have a constructor available
                 if (pocoDestType.IsArray)
@@ -411,8 +411,10 @@ namespace Cassandra.Mapping
             else
             {
                 // See if destination type interface on the POCO is one we can create an empty object for
-                if (pocoDestType.IsGenericType == false)
+                if (!pocoDestType.IsGenericTypeLocal())
+                {
                     return false;
+                }
 
                 Type openGenericType = pocoDestType.GetGenericTypeDefinition();
 
@@ -467,7 +469,16 @@ namespace Cassandra.Mapping
         /// </summary>
         private static bool ImplementsCollectionInterface(Type t)
         {
-            return t.GetInterfaces().FirstOrDefault(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof (ICollection<>)) != null;
+            return t.GetInterfaces().FirstOrDefault(i => i.IsGenericTypeLocal() && i.GetGenericTypeDefinition() == typeof (ICollection<>)) != null;
+        }
+
+        private static MethodInfo GetMethod(Delegate deleg)
+        {
+#if !NETCORE
+            return deleg.Method;
+#else
+            return deleg.GetMethodInfo();
+#endif
         }
     }
 }

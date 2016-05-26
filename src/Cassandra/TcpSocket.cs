@@ -39,6 +39,7 @@ namespace Cassandra
         private SocketAsyncEventArgs _receiveSocketEvent;
         private SocketAsyncEventArgs _sendSocketEvent;
         private Stream _socketStream;
+        private volatile Timer _connectTimer;
         private byte[] _receiveBuffer;
         private volatile bool _isClosing;
         private Action _writeFlushCallback;
@@ -118,12 +119,12 @@ namespace Cassandra
             {
                 RemoteEndPoint = IPEndPoint
             };
-            var timer = new Timer(state =>
+            _connectTimer = new Timer(state =>
             {
                 tcs.TrySetException(new SocketException((int)SocketError.TimedOut));
                 eventArgs.Dispose();
-                ((Timer)state).Dispose();
-            });
+                _connectTimer.Dispose();
+            }, null, Timeout.Infinite, Timeout.Infinite);
 
             eventArgs.Completed += (sender, e) =>
             {
@@ -134,8 +135,7 @@ namespace Cassandra
                 }
                 tcs.TrySetResult(true);
                 e.Dispose();
-                // ReSharper disable once PossibleNullReferenceException
-                timer.Dispose();
+                _connectTimer.Dispose();
             };
 
             try
@@ -149,7 +149,7 @@ namespace Cassandra
 
             try
             {
-                timer.Change(Options.ConnectTimeoutMillis, Timeout.Infinite);
+                _conn.Change(Options.ConnectTimeoutMillis, Timeout.Infinite);
             }
             catch (ObjectDisposedException)
             {

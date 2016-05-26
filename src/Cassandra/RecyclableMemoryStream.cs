@@ -246,7 +246,7 @@ namespace Microsoft.IO
             else
             {
                 // We're being finalized.
-
+#if !NETCORE
                 if (AppDomain.CurrentDomain.IsFinalizingForUnload())
                 {
                     // If we're being finalized because of a shutdown, don't go any further.
@@ -255,7 +255,7 @@ namespace Microsoft.IO
                     base.Dispose(disposing);
                     return;
                 }
-
+#endif
                 this.memoryManager.ReportStreamFinalized();
             }
 
@@ -279,6 +279,7 @@ namespace Microsoft.IO
             base.Dispose(disposing);
         }
 
+#if !NETCORE
         /// <summary>
         /// Equivalent to Dispose
         /// </summary>
@@ -286,6 +287,7 @@ namespace Microsoft.IO
         {
             this.Dispose(true);
         }
+#endif
         #endregion
 
         #region MemoryStream overrides
@@ -407,7 +409,11 @@ namespace Microsoft.IO
         /// <remarks>IMPORTANT: Doing a Write() after calling GetBuffer() invalidates the buffer. The old buffer is held onto
         /// until Dispose is called, but the next time GetBuffer() is called, a new buffer from the pool will be required.</remarks>
         /// <exception cref="ObjectDisposedException">Object has been disposed</exception>
+#if !NETCORE
         public override byte[] GetBuffer()
+#else
+        public byte[] GetBuffer()
+#endif
         {
             this.CheckDisposed();
 

@@ -33,7 +33,7 @@ namespace Cassandra.Mapping.Attributes
             PocoType = type;
             //Get the table name from the attribute or the type name
             TableName = type.Name;
-            var tableAttribute = (TableAttribute)type.GetCustomAttributes(typeof(TableAttribute), true).FirstOrDefault();
+            var tableAttribute = (TableAttribute)type.GetCustomAttributeLocal(typeof(TableAttribute), true);
             if (tableAttribute != null)
             {
                 TableName = tableAttribute.Name;

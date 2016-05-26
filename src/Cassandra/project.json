@@ -1,0 +1,72 @@
+{
+  "version": "3.0.6-*",
+  "buildOptions": {
+    "warningsAsErrors": true,
+    "keyFile": "../../build/datastax.snk",
+    "publicSign": true
+  },
+  "frameworks": {
+    "net40": {
+      "frameworkAssemblies": {
+        "System": "",
+        "System.Data": "",
+        "System.Numerics": "",
+        "System.Xml": ""
+      },
+      "dependencies": {
+        "lz4net": "1.0.10.93"
+      }
+    },
+    "net45": {
+      "frameworkAssemblies": {
+        "System": "",
+        "System.Data": "",
+        "System.Numerics": "",
+        "System.Xml": ""
+      },
+      "dependencies": {
+        "lz4net": "1.0.10.93"
+      }
+    },
+    "netstandard1.5": {
+      "imports": "dnxcore50",
+      "buildOptions": {
+        "define": [
+          "NETCORE"
+        ]
+      },
+      "dependencies": {
+        "Microsoft.NETCore.App": {
+          "type": "platform",
+          "version": "1.0.0-rc2-3002702"
+        },
+        "System.Dynamic.Runtime": "4.0.11-rc2-24027",
+        "System.Runtime": "4.1.0-rc2-24027",
+        "System.Runtime.Extensions": "4.1.0-rc2-24027",
+        "System.Runtime.Serialization.Primitives": "4.1.1-rc2-24027",
+        "System.Data.Common": "4.0.1-rc2-24027",
+        "System.Diagnostics.TraceSource": "4.0.0-rc2-24027",
+        "System.Diagnostics.StackTrace": "4.0.1-rc2-24027",
+        "System.Collections": "4.0.11-rc2-24027",
+        "System.Diagnostics.Debug": "4.0.11-rc2-24027",
+        "System.Globalization": "4.0.11-rc2-24027",
+        "System.IO": "4.1.0-rc2-24027",
+        "System.Linq": "4.1.0-rc2-24027",
+        "System.Linq.Expressions": "4.0.11-rc2-24027",
+        "System.Net.NameResolution": "4.0.0-rc2-24027",
+        "System.ObjectModel": "4.0.12-rc2-24027",
+        "System.Reflection": "4.1.0-rc2-24027",
+        "System.Reflection.Extensions": "4.0.1-rc2-24027",
+        "System.Resources.ResourceManager": "4.0.1-rc2-24027",
+        "System.Text.Encoding": "4.0.11-rc2-24027",
+        "System.Text.Encoding.Extensions": "4.0.11-rc2-24027",
+        "System.Text.RegularExpressions": "4.0.12-rc2-24027",
+        "System.Threading": "4.0.11-rc2-24027",
+        "System.Threading.Tasks": "4.0.11-rc2-24027",
+        "System.Threading.Timer": "4.0.1-rc2-24027",
+        "System.Xml.ReaderWriter": "4.0.11-rc2-24027",
+        "System.Xml.XDocument": "4.0.11-rc2-24027"
+      }
+    }
+  }
+}

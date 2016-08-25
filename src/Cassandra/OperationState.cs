@@ -18,7 +18,8 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Text;
+﻿using System.Net.Sockets;
+﻿using System.Text;
 ﻿using System.Threading;
 ﻿using System.Threading.Tasks;
 ﻿using Cassandra.Requests;
@@ -38,7 +39,7 @@ namespace Cassandra
         private const int StateTimedout = 2;
         private const int StateCompleted = 3;
         private Action<Exception, Response> _callback;
-        private static readonly Action<Exception, Response> Noop = (_, __) => { };
+        public static readonly Action<Exception, Response> Noop = (_, __) => { };
         private volatile bool _timeoutCallbackSet;
         private int _state = StateInit;
 
@@ -68,12 +69,15 @@ namespace Cassandra
         }
 
         /// <summary>
-        /// Marks this operation as completed and returns the callback
+        /// Marks this operation as completed and returns the callback.
+        /// Note that the returned callback might be a reference to <see cref="Noop"/>, as the original callback
+        /// might be already called.
         /// </summary>
         public Action<Exception, Response> SetCompleted()
         {
+            Interlocked.Increment(ref Connection.CounterOperationMarkCompleted);
             var previousState = Interlocked.CompareExchange(ref _state, StateCompleted, StateInit);
-            if (previousState == StateCancelled)
+            if (previousState == StateCancelled || previousState == StateCompleted)
             {
                 return Noop;
             }
@@ -86,6 +90,10 @@ namespace Cassandra
                     //Cancel it if it hasn't expired
                     Timeout.Cancel();
                 }
+                if (callback != Noop)
+                {
+                    Interlocked.Increment(ref Connection.CounterOperationChangedState);
+                }
                 return callback;
             }
             //Operation has timed out
@@ -95,18 +103,47 @@ namespace Cassandra
                 Thread.SpinWait(10);
             }
             callback = Interlocked.Exchange(ref _callback, Noop);
+            if (callback != Noop)
+            {
+                Interlocked.Increment(ref Connection.CounterOperationChangedState);
+            }
             return callback;
         }
 
         /// <summary>
         /// Marks this operation as completed and invokes the callback with the exception using the default task scheduler.
+        /// Its safe to call this method multiple times as the underlying callback will be invoked just once.
         /// </summary>
         public void InvokeCallback(Exception ex)
         {
             var callback = SetCompleted();
+            if (callback == Noop)
+            {
+                return;
+            }
             //Invoke the callback in a new thread in the thread pool
             //This way we don't let the user block on a thread used by the Connection
-            Task.Factory.StartNew(() => callback(ex, null), CancellationToken.None, TaskCreationOptions.None, TaskScheduler.Default);
+            Interlocked.Increment(ref Connection.CounterCallback);
+            Task.Factory.StartNew(() =>
+            {
+                try
+                {
+                    if (ex is SocketException)
+                    {
+                        Interlocked.Increment(ref Connection.CounterSocketExceptionCallback);
+                    }
+                    else
+                    {
+                        Console.WriteLine("!!! " + ex);
+                    }
+                    callback(ex, null);
+                }
+                catch (Exception callbackEx)
+                {
+                    Console.WriteLine("!!! Callback Exception at Operation State: " + callbackEx);
+                }
+
+            }, CancellationToken.None, TaskCreationOptions.None, TaskScheduler.Default);
         }
 
         /// <summary>
@@ -145,6 +182,37 @@ namespace Cassandra
                 //We should not worry about yielding OperationTimedOutExceptions when this is cancelled.
                 Timeout.Cancel();
             }
+        }
+
+        /// <summary>
+        /// Asynchronously marks the provided operations as completed and invoke the callbacks with the exception.
+        /// </summary>
+        internal static void CallbackMultiple(IEnumerable<OperationState> ops, Exception ex)
+        {
+            Task.Factory.StartNew(() =>
+            {
+                foreach (var state in ops)
+                {
+                    var callback = state.SetCompleted();
+                    if (callback == Noop)
+                    {
+                        continue;
+                    }
+                    Interlocked.Increment(ref Connection.CounterCallback);
+                    if (ex is SocketException)
+                    {
+                        Interlocked.Increment(ref Connection.CounterSocketExceptionCallback);
+                    }
+                    try
+                    {
+                        callback(ex, null);
+                    }
+                    catch (Exception callbackEx)
+                    {
+                        Console.WriteLine("!!! Callback Exception at Operation State: " + callbackEx);
+                    }
+                }
+            }, CancellationToken.None, TaskCreationOptions.None, TaskScheduler.Default);
         }
     }
 }

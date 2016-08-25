@@ -31,6 +31,6 @@ build:
 
       # Run the tests
       echo "==========RUNNING FULL SUITE OF TESTS=========="
-      mono ./testrunner/NUnit.Runners.2.6.4/tools/nunit-console.exe src/Cassandra.Tests/bin/Release/Cassandra.Tests.dll src/Cassandra.IntegrationTests/bin/Release/Cassandra.IntegrationTests.dll -labels -exclude=long,duration
+      mono ./testrunner/NUnit.Runners.2.6.4/tools/nunit-console.exe src/Cassandra.Tests/bin/Release/Cassandra.Tests.dll src/Cassandra.IntegrationTests/bin/Release/Cassandra.IntegrationTests.dll -labels -include=debug
   - nunit:
     - "TestResult.xml"

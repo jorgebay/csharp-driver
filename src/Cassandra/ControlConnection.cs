@@ -515,6 +515,7 @@ namespace Cassandra
         public Task<IEnumerable<Row>> QueryAsync(string cqlQuery, bool retry = false)
         {
             var request = new QueryRequest(ProtocolVersion, cqlQuery, false, QueryProtocolOptions.Default);
+            Interlocked.Increment(ref Connection.CounterMetadata);
             var task = _connection
                 .Send(request)
                 .ContinueSync(GetRowSet);

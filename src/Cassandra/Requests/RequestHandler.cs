@@ -180,6 +180,7 @@ namespace Cassandra.Requests
             var finishedNow = Interlocked.CompareExchange(ref _state, StateCompleted, StateInit) == StateInit;
             if (!finishedNow)
             {
+                Console.WriteLine("!!! NOT FINISHED");
                 return false;
             }
             //Cancel the current timer

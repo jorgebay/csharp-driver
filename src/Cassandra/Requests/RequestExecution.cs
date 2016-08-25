@@ -10,6 +10,14 @@ using Cassandra.Tasks;
 
 namespace Cassandra.Requests
 {
+    internal class RequestExecution
+    {
+        public static long CountRetry;
+        public static long CountRetryResponse;
+        public static long CountStart;
+        public static long CountResponse;
+    }
+
     internal class RequestExecution<T> where T : class
     {
         private readonly static Logger Logger = new Logger(typeof(RequestExecution<T>));
@@ -45,6 +53,7 @@ namespace Cassandra.Requests
         /// <param name="useCurrentHost"></param>
         public void Start(bool useCurrentHost = false)
         {
+            Interlocked.Increment(ref RequestExecution.CountStart);
             if (!useCurrentHost)
             {
                 //Get a new connection from the next host
@@ -52,6 +61,7 @@ namespace Cassandra.Requests
                 {
                     if (t.Exception != null)
                     {
+                        Console.WriteLine("!!! Could not acquire a connection: " + t.Exception.InnerException);
                         HandleResponse(t.Exception.InnerException, null);
                         return;
                     }
@@ -96,9 +106,19 @@ namespace Cassandra.Requests
 
         public void HandleResponse(Exception ex, Response response)
         {
+            Interlocked.Increment(ref RequestExecution.CountResponse);
+            if (_retryCount > 0)
+            {
+                Interlocked.Increment(ref RequestExecution.CountRetryResponse);
+            }
+            if (ex is SocketException)
+            {
+                Interlocked.Increment(ref Connection.CounterSocketExceptionCallbackReceived);
+            }
             if (_parent.HasCompleted())
             {
                 //Do nothing else, another execution finished already set the response
+                Console.WriteLine("!!! Marked as completed ???");
                 return;
             }
             try
@@ -128,6 +148,7 @@ namespace Cassandra.Requests
 
         public void Retry(ConsistencyLevel? consistency, bool useCurrentHost)
         {
+            Interlocked.Increment(ref RequestExecution.CountRetry);
             _retryCount++;
             if (consistency != null && _request is ICqlRequest)
             {
@@ -407,6 +428,7 @@ namespace Cassandra.Requests
             {
                 if (ex != null)
                 {
+                    Console.WriteLine("!!! Exception in reprepare response: " + ex);
                     HandleException(ex);
                     return;
                 }

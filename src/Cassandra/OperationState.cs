@@ -38,9 +38,10 @@ namespace Cassandra
         private const int StateTimedout = 2;
         private const int StateCompleted = 3;
         private Action<Exception, Response> _callback;
-        private static readonly Action<Exception, Response> Noop = (_, __) => { };
+        public static readonly Action<Exception, Response> Noop = (_, __) => { };
         private volatile bool _timeoutCallbackSet;
         private int _state = StateInit;
+        private volatile HashedWheelTimer.ITimeout _timeout;
 
         /// <summary>
         /// 8 byte header of the frame
@@ -48,11 +49,6 @@ namespace Cassandra
         public FrameHeader Header { get; set; }
 
         public IRequest Request { get; set; }
-
-        /// <summary>
-        /// Read timeout associated with the request
-        /// </summary>
-        public HashedWheelTimer.ITimeout Timeout { get; set; }
 
         /// <summary>
         /// Gets or sets the timeout in milliseconds for the request.
@@ -68,12 +64,22 @@ namespace Cassandra
         }
 
         /// <summary>
-        /// Marks this operation as completed and returns the callback
+        /// Sets the read timeout associated with the request
+        /// </summary>
+        public void SetTimeout(HashedWheelTimer.ITimeout value)
+        {
+            _timeout = value;
+        }
+
+        /// <summary>
+        /// Marks this operation as completed and returns the callback.
+        /// Note that the returned callback might be a reference to <see cref="Noop"/>, as the original callback
+        /// might be already called.
         /// </summary>
         public Action<Exception, Response> SetCompleted()
         {
             var previousState = Interlocked.CompareExchange(ref _state, StateCompleted, StateInit);
-            if (previousState == StateCancelled)
+            if (previousState == StateCancelled || previousState == StateCompleted)
             {
                 return Noop;
             }
@@ -81,10 +87,11 @@ namespace Cassandra
             if (previousState == StateInit)
             {
                 callback = Interlocked.Exchange(ref _callback, Noop);
-                if (Timeout != null)
+                var timeout = _timeout;
+                if (timeout != null)
                 {
                     //Cancel it if it hasn't expired
-                    Timeout.Cancel();
+                    timeout.Cancel();
                 }
                 return callback;
             }
@@ -101,10 +108,15 @@ namespace Cassandra
 
         /// <summary>
         /// Marks this operation as completed and invokes the callback with the exception using the default task scheduler.
+        /// Its safe to call this method multiple times as the underlying callback will be invoked just once.
         /// </summary>
         public void InvokeCallback(Exception ex)
         {
             var callback = SetCompleted();
+            if (callback == Noop)
+            {
+                return;
+            }
             //Invoke the callback in a new thread in the thread pool
             //This way we don't let the user block on a thread used by the Connection
             Task.Factory.StartNew(() => callback(ex, null), CancellationToken.None, TaskCreationOptions.None, TaskScheduler.Default);
@@ -114,7 +126,7 @@ namespace Cassandra
         /// Marks this operation as timed-out, callbacks with the exception 
         /// and sets a handler when the response is received
         /// </summary>
-        public bool SetTimedOut(OperationTimedOutException ex, Action onReceive)
+        public bool MarkAsTimedOut(OperationTimedOutException ex, Action onReceive)
         {
             var previousState = Interlocked.CompareExchange(ref _state, StateTimedout, StateInit);
             if (previousState != StateInit)
@@ -144,12 +156,28 @@ namespace Cassandra
             }
             //Remove the closure
             Interlocked.Exchange(ref _callback, Noop);
-            if (Timeout != null)
+            var timeout = _timeout;
+            if (timeout != null)
             {
                 //Cancel it if it hasn't expired
                 //We should not worry about yielding OperationTimedOutExceptions when this is cancelled.
-                Timeout.Cancel();
+                timeout.Cancel();
             }
+        }
+
+        /// <summary>
+        /// Asynchronously marks the provided operations as completed and invoke the callbacks with the exception.
+        /// </summary>
+        internal static void CallbackMultiple(IEnumerable<OperationState> ops, Exception ex)
+        {
+            Task.Factory.StartNew(() =>
+            {
+                foreach (var state in ops)
+                {
+                    var callback = state.SetCompleted();
+                    callback(ex, null);
+                }
+            }, CancellationToken.None, TaskCreationOptions.None, TaskScheduler.Default);
         }
     }
 }

@@ -235,6 +235,17 @@ namespace Cassandra
                 {
                     willRaiseEvent = _socket.ReceiveAsync(_receiveSocketEvent);
                 }
+                catch (ObjectDisposedException)
+                {
+                    OnError(null, SocketError.NotConnected);
+                }
+                catch (NullReferenceException)
+                {
+                    // Mono can throw a NRE when being disposed concurrently
+                    // https://github.com/mono/mono/blob/b190f213a364a2793cc573e1bd9fae8be72296e4/mcs/class/System/System.Net.Sockets/SocketAsyncEventArgs.cs#L184-L185
+                    // https://github.com/mono/mono/blob/b190f213a364a2793cc573e1bd9fae8be72296e4/mcs/class/System/System.Net.Sockets/Socket.cs#L1873-L1874
+                    OnError(null, SocketError.NotConnected);
+                }
                 catch (Exception ex)
                 {
                     OnError(ex);
@@ -246,10 +257,17 @@ namespace Cassandra
             }
             else
             {
-                //Stream mode
-                _socketStream
-                    .ReadAsync(_receiveBuffer, 0, _receiveBuffer.Length)
-                    .ContinueWith(OnReceiveStreamCallback, TaskContinuationOptions.ExecuteSynchronously);
+                // Stream mode
+                try
+                {
+                    _socketStream
+                        .ReadAsync(_receiveBuffer, 0, _receiveBuffer.Length)
+                        .ContinueWith(OnReceiveStreamCallback, TaskContinuationOptions.ExecuteSynchronously);
+                }
+                catch (Exception ex)
+                {
+                    HandleStreamException(ex);
+                }
             }
         }
 
@@ -294,15 +312,7 @@ namespace Cassandra
         {
             if (readTask.Exception != null)
             {
-                var ex = readTask.Exception.InnerException;
-                if (ex is IOException && ex.InnerException is SocketException)
-                {
-                    OnError((SocketException)ex.InnerException);
-                }
-                else
-                {
-                    OnError(ex);
-                }
+                HandleStreamException(readTask.Exception.InnerException);
                 return;
             }
             var bytesRead = readTask.Result;
@@ -324,6 +334,31 @@ namespace Cassandra
                 OnError(ex);
             }
             ReceiveAsync();
+        }
+
+        /// <summary>
+        /// Handles exceptions that the methods <c>NetworkStream.ReadAsync()</c> and <c>NetworkStream.WriteAsync()</c> can throw.
+        /// </summary>
+        private void HandleStreamException(Exception ex)
+        {
+            if (ex is IOException)
+            {
+                if (ex.InnerException is SocketException)
+                {
+                    OnError((SocketException)ex.InnerException);
+                    return;
+                }
+                // Wrapped ObjectDisposedException and others: we can consider it as not connected
+                OnError(null, SocketError.NotConnected);
+                return;
+            }
+            if (ex is ObjectDisposedException)
+            {
+                // Wrapped ObjectDisposedException and others: we can consider it as not connected
+                OnError(null, SocketError.NotConnected);
+                return;
+            }
+            OnError(ex);
         }
 
         /// <summary>
@@ -349,15 +384,7 @@ namespace Cassandra
         {
             if (writeTask.Exception != null)
             {
-                var ex = writeTask.Exception.InnerException;
-                if (ex is IOException && ex.InnerException is SocketException)
-                {
-                    OnError((SocketException)ex.InnerException);
-                }
-                else
-                {
-                    OnError(ex);
-                }
+                HandleStreamException(writeTask.Exception.InnerException);
                 return;
             }
             OnWriteFlushed();
@@ -417,6 +444,17 @@ namespace Cassandra
                 {
                     isWritePending = _socket.SendAsync(_sendSocketEvent);
                 }
+                catch (ObjectDisposedException)
+                {
+                    OnError(null, SocketError.NotConnected);
+                }
+                catch (NullReferenceException)
+                {
+                    // Mono can throw a NRE when being disposed concurrently
+                    // https://github.com/mono/mono/blob/b190f213a364a2793cc573e1bd9fae8be72296e4/mcs/class/System/System.Net.Sockets/SocketAsyncEventArgs.cs#L184-L185
+                    // https://github.com/mono/mono/blob/b190f213a364a2793cc573e1bd9fae8be72296e4/mcs/class/System/System.Net.Sockets/Socket.cs#L2477-L2478
+                    OnError(null, SocketError.NotConnected);
+                }
                 catch (Exception ex)
                 {
                     OnError(ex);
@@ -429,9 +467,16 @@ namespace Cassandra
             else
             {
                 var length = (int)stream.Length;
-                _socketStream
-                    .WriteAsync(stream.GetBuffer(), 0, length)
-                    .ContinueWith(OnSendStreamCallback, TaskContinuationOptions.ExecuteSynchronously);
+                try
+                {
+                    _socketStream
+                        .WriteAsync(stream.GetBuffer(), 0, length)
+                        .ContinueWith(OnSendStreamCallback, TaskContinuationOptions.ExecuteSynchronously);
+                }
+                catch (Exception ex)
+                {
+                    HandleStreamException(ex);
+                }
             }
         }
 

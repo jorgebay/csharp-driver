@@ -15,9 +15,10 @@ namespace Cassandra.Tests
             Diagnostics.CassandraTraceSwitch.Level = System.Diagnostics.TraceLevel.Info;
         }
 
-        private ControlConnection NewInstance(Configuration config, Metadata metadata)
+        private ControlConnection NewInstance(Configuration config, Metadata metadata, IEnumerable<object> contactPoints = null)
         {
-            return new ControlConnection(ProtocolVersion.MaxSupported, config, metadata);
+            contactPoints = contactPoints ?? new [] { "127.0.0.1" };
+            return new ControlConnection(ProtocolVersion.MaxSupported, contactPoints, config, metadata);
         }
 
         private ControlConnection NewInstance(Metadata metadata)

@@ -76,12 +76,18 @@ namespace Cassandra
         /// <returns>the newly created Cluster instance </returns>
         public static Cluster BuildFrom(IInitializer initializer)
         {
-            if (initializer.ContactPoints.Count == 0)
+            return BuildFrom(initializer, null);
+        }
+
+        internal static Cluster BuildFrom(IInitializer initializer, ICollection<string> hostNames)
+        {
+            hostNames = hostNames ?? new string[0];
+            if (initializer.ContactPoints.Count == 0 && hostNames.Count == 0)
             {
                 throw new ArgumentException("Cannot build a cluster without contact points");
             }
 
-            return new Cluster(initializer.ContactPoints, initializer.GetConfiguration());
+            return new Cluster(initializer.ContactPoints.Cast<object>().Concat(hostNames), initializer.GetConfiguration());
         }
 
         /// <summary>
@@ -133,21 +139,17 @@ namespace Cassandra
             }
         }
 
-        private Cluster(IEnumerable<IPEndPoint> contactPoints, Configuration configuration)
+        private Cluster(IEnumerable<object> contactPoints, Configuration configuration)
         {
             Configuration = configuration;
             _metadata = new Metadata(configuration);
-            foreach (var ep in contactPoints)
-            {
-                _metadata.AddHost(ep);
-            }
             var protocolVersion = _maxProtocolVersion;
             if (Configuration.ProtocolOptions.MaxProtocolVersionValue != null &&
                 Configuration.ProtocolOptions.MaxProtocolVersionValue.Value.IsSupported())
             {
                 protocolVersion = Configuration.ProtocolOptions.MaxProtocolVersionValue.Value;
             }
-            _controlConnection = new ControlConnection(protocolVersion, Configuration, _metadata);
+            _controlConnection = new ControlConnection(protocolVersion, contactPoints, Configuration, _metadata);
             _metadata.ControlConnection = _controlConnection;
             _serializer = _controlConnection.Serializer;
         }

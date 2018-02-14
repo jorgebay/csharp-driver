@@ -29,9 +29,10 @@ namespace Cassandra.IntegrationTests.Core
             if (metadata == null)
             {
                 metadata = new Metadata(config);
-                metadata.AddHost(new IPEndPoint(IPAddress.Parse(testCluster.InitialContactPoint), ProtocolOptions.DefaultPort));
             }
-            var cc = new ControlConnection(version, config, metadata);
+
+            var contactPoint = new IPEndPoint(IPAddress.Parse(testCluster.InitialContactPoint), ProtocolOptions.DefaultPort);
+            var cc = new ControlConnection(version, new[] { contactPoint }, config, metadata);
             metadata.ControlConnection = cc;
             return cc;
         }
@@ -52,7 +53,6 @@ namespace Cassandra.IntegrationTests.Core
                 new DefaultAddressTranslator());
             var testCluster = TestClusterManager.GetNonShareableTestCluster(1, DefaultMaxClusterCreateRetries, true, false);
             var metadata = new Metadata(config);
-            metadata.AddHost(new IPEndPoint(IPAddress.Parse(testCluster.InitialContactPoint), ProtocolOptions.DefaultPort));
             var clusterMock = new Mock<ICluster>();
             clusterMock.Setup(c => c.AllHosts()).Returns(() => metadata.Hosts.ToCollection());
             lbp.Initialize(clusterMock.Object);
@@ -74,53 +74,6 @@ namespace Cassandra.IntegrationTests.Core
         }
 
         [Test]
-        public async Task Should_Issue_Reconnect_Once()
-        {
-            var lbp = new RoundRobinPolicy();
-            var config = new Configuration(
-                new Cassandra.Policies(lbp, new ConstantReconnectionPolicy(1000), FallthroughRetryPolicy.Instance),
-                new ProtocolOptions(),
-                null,
-                new SocketOptions(),
-                new ClientOptions(),
-                NoneAuthProvider.Instance,
-                null,
-                new QueryOptions(),
-                new DefaultAddressTranslator());
-            var testCluster = TestClusterManager.GetNonShareableTestCluster(1, DefaultMaxClusterCreateRetries, true, false);
-            var metadata = new Metadata(config);
-            metadata.AddHost(new IPEndPoint(IPAddress.Parse(testCluster.InitialContactPoint), ProtocolOptions.DefaultPort));
-            var clusterMock = new Mock<ICluster>();
-            clusterMock.Setup(c => c.AllHosts()).Returns(() => metadata.Hosts.ToCollection());
-            lbp.Initialize(clusterMock.Object);
-            using (var cc = NewInstance(testCluster, config))
-            {
-                await cc.Init();
-                testCluster.Stop(1);
-                const int lengthPerProcessor = 20;
-                var arr = new Task[Environment.ProcessorCount * lengthPerProcessor];
-                Parallel.For(0, Environment.ProcessorCount, j =>
-                {
-                    for (var i = 0; i < lengthPerProcessor; i++)
-                    {
-                        arr[j * lengthPerProcessor + i] = cc.Reconnect();
-                    }
-                });
-                // When any of the tasks completes, all the task should have completed
-                await Task.WhenAny(arr);
-                await Task.Delay(20);
-
-                var notFaultedTaskStatus = arr.Where(t => !t.IsFaulted)
-                                              .Select(t => (TaskStatus?)t.Status).FirstOrDefault();
-                Assert.Null(notFaultedTaskStatus, "Expected only faulted tasks");
-                var ex = Assert.Throws<NoHostAvailableException>(() => TaskHelper.WaitToComplete(arr[0]));
-                Assert.AreEqual(1, ex.Errors.Count);
-                Assert.IsInstanceOf<SocketException>(ex.Errors.Values.First());
-            }
-            testCluster.ShutDown();
-        }
-
-        [Test]
         public void Should_Reconnect_After_Several_Failed_Attempts()
         {
             var lbp = new RoundRobinPolicy();
@@ -136,7 +89,6 @@ namespace Cassandra.IntegrationTests.Core
                 new DefaultAddressTranslator());
             var testCluster = TestClusterManager.GetNonShareableTestCluster(1, DefaultMaxClusterCreateRetries, true, false);
             var metadata = new Metadata(config);
-            metadata.AddHost(new IPEndPoint(IPAddress.Parse(testCluster.InitialContactPoint), ProtocolOptions.DefaultPort));
             var clusterMock = new Mock<ICluster>();
             clusterMock.Setup(c => c.AllHosts()).Returns(() => metadata.Hosts.ToCollection());
             lbp.Initialize(clusterMock.Object);

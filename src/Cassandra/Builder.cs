@@ -15,11 +15,9 @@
 //
 
 using System;
-using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net;
-using System.Threading;
 using Cassandra.Serialization;
 
 namespace Cassandra
@@ -30,6 +28,7 @@ namespace Cassandra
     public class Builder : IInitializer
     {
         private readonly List<IPEndPoint> _addresses = new List<IPEndPoint>();
+        private readonly IList<string> _hostNames = new List<string>();
         private const int DefaultQueryAbortTimeout = 20000;
         private PoolingOptions _poolingOptions;
         private SocketOptions _socketOptions = new SocketOptions();
@@ -192,7 +191,7 @@ namespace Cassandra
         /// <returns>this Builder</returns>
         public Builder AddContactPoint(string address)
         {
-            AddContactPoints(Utils.ResolveHostByName(address));
+            _hostNames.Add(address ?? throw new ArgumentNullException(nameof(address)));   
             return this;
         }
 
@@ -204,7 +203,9 @@ namespace Cassandra
         /// <returns>this Builder</returns>
         public Builder AddContactPoint(IPAddress address)
         {
-            AddContactPoint(new IPEndPoint(address, _port));
+            // Avoid creating IPEndPoint entries using the current port,
+            // as the user might provide a different one by calling WithPort() after this call
+            AddContactPoint(address.ToString());
             return this;
         }
 
@@ -240,7 +241,10 @@ namespace Cassandra
         /// <returns>this Builder</returns>
         public Builder AddContactPoints(IEnumerable<string> addresses)
         {
-            AddContactPoints(addresses.SelectMany(Utils.ResolveHostByName));
+            foreach (var address in addresses)
+            {
+                AddContactPoint(address);
+            }
             return this;
         }
 
@@ -264,7 +268,10 @@ namespace Cassandra
         /// <returns>this Builder</returns>
         public Builder AddContactPoints(IEnumerable<IPAddress> addresses)
         {
-            AddContactPoints(addresses.Select(p => new IPEndPoint(p, _port)));
+            foreach (var address in addresses)
+            {
+                AddContactPoint(address);
+            }
             return this;
         }
 
@@ -538,8 +545,8 @@ namespace Cassandra
         /// <param name="version">
         /// <para>The native protocol version.</para>
         /// <para>Different Cassandra versions support a range of protocol versions, for example: </para>
-        /// <para>- Cassandra 2.0 (DSE 4.0 – 4.6): Supports protocol versions 1 and 2.</para>
-        /// <para>- Cassandra 2.1 (DSE 4.7 – 4.8): Supports protocol versions 1, 2 and 3.</para>
+        /// <para>- Cassandra 2.0 (DSE 4.0 - 4.6): Supports protocol versions 1 and 2.</para>
+        /// <para>- Cassandra 2.1 (DSE 4.7 - 4.8): Supports protocol versions 1, 2 and 3.</para>
         /// <para>- Cassandra 2.2: Supports protocol versions 1, 2, 3 and 4.</para>
         /// <para>- Cassandra 3.0: Supports protocol versions 3 and 4.</para>
         /// </param>
@@ -602,7 +609,7 @@ namespace Cassandra
         /// <returns>the newly build Cluster instance. </returns>
         public Cluster Build()
         {
-            return Cluster.BuildFrom(this);
+            return Cluster.BuildFrom(this, _hostNames);
         }
     }
 }

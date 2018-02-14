@@ -30,6 +30,53 @@ namespace Cassandra.IntegrationTests.Core
         }
 
         [Test]
+        public void Should_Try_To_Resolve_And_Continue_With_The_Next_Contact_Point_If_It_Fails()
+        {
+            using (var cluster = Cluster.Builder()
+                                        .AddContactPoint("not-a-host")
+                                        .AddContactPoint(TestCluster.InitialContactPoint)
+                                        .Build())
+            {
+                var session = cluster.Connect();
+                session.Execute("select * from system.local");
+                Assert.That(cluster.AllHosts().Count, Is.EqualTo(1));
+            }
+        }
+
+        [Test]
+        public void Should_Throw_When_All_Contact_Points_Cant_Be_Resolved()
+        {
+            using (var cluster = Cluster.Builder()
+                                        .AddContactPoint("not-a-host")
+                                        .AddContactPoint("not-a-host2")
+                                        .Build())
+            {
+                var ex = Assert.Throws<NoHostAvailableException>(() => cluster.Connect());
+                Assert.That(ex.Message, Is.EqualTo("No host name could be resolved, attempted: not-a-host, not-a-host2"));
+            }
+        }
+
+        [Test]
+        public void Should_Use_Provided_Port()
+        {
+            if (!IPAddress.TryParse(TestCluster.InitialContactPoint, out var address))
+            {
+                Assert.Ignore("Test contact point is not an IP address");
+            }
+
+            const int port = 9099;
+            using (var cluster = Cluster.Builder()
+                                        .AddContactPoint(TestCluster.InitialContactPoint)
+                                        .WithPort(port)
+                                        .Build())
+            {
+                var ex = Assert.Throws<NoHostAvailableException>(() => cluster.Connect());
+                Assert.That(ex.Errors.Count, Is.EqualTo(1));
+                Assert.That(ex.Errors.Keys.First(), Is.EqualTo(new IPEndPoint(address, port)));
+            }
+        }
+
+        [Test]
         public void Cluster_Init_Keyspace_Race_Test()
         {
             using (var cluster = Cluster.Builder()

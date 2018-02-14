@@ -35,6 +35,7 @@ namespace Cassandra
         private const CassandraEventType CassandraEventTypes = CassandraEventType.TopologyChange | CassandraEventType.StatusChange | CassandraEventType.SchemaChange;
         private static readonly IPAddress BindAllAddress = new IPAddress(new byte[4]);
 
+        private readonly IEnumerable<object> _contactPoints;
         private readonly Metadata _metadata;
         private volatile Host _host;
         private volatile Connection _connection;
@@ -81,8 +82,10 @@ namespace Cassandra
             get { return _serializer; }
         }
 
-        internal ControlConnection(ProtocolVersion initialProtocolVersion, Configuration config, Metadata metadata)
+        internal ControlConnection(ProtocolVersion initialProtocolVersion, IEnumerable<object> contactPoints, 
+                                   Configuration config, Metadata metadata)
         {
+            _contactPoints = contactPoints;
             _metadata = metadata;
             _reconnectionPolicy = config.Policies.ReconnectionPolicy;
             _reconnectionSchedule = _reconnectionPolicy.NewSchedule();
@@ -105,7 +108,11 @@ namespace Cassandra
         internal async Task Init()
         {
             _logger.Info("Trying to connect the ControlConnection");
+            
+            await AddHosts().ConfigureAwait(false);
+
             await Connect(true).ConfigureAwait(false);
+
             SubscribeEventHandlers();
             var obtainingMetadataFailed = false;
             try
@@ -124,6 +131,58 @@ namespace Cassandra
                 // There was a problem using the connection obtained, it is not usual but can happen
                 // Retry one more time and throw if there is problem
                 await Reconnect().ConfigureAwait(false);
+            }
+        }
+
+        /// <summary>
+        /// Adds contact points as hosts and resolving host names if necessary.
+        /// </summary>
+        /// <exception cref="NoHostAvailableException">When no host can be resolved and no other contact point is an address</exception>
+        private async Task AddHosts()
+        {
+            var hostNames = new List<string>();
+            foreach (var contactPoint in _contactPoints)
+            {
+                if (contactPoint is IPEndPoint endpoint)
+                {
+                    _metadata.AddHost(endpoint);
+                    continue;
+                }
+
+                if (!(contactPoint is string contactPointText))
+                {
+                    throw new InvalidOperationException("Contact points should be either string or IPEndPoint instances");
+                }
+
+                if (IPAddress.TryParse(contactPointText, out var ipAddress))
+                {
+                    _metadata.AddHost(new IPEndPoint(ipAddress, _config.ProtocolOptions.Port));
+                    continue;
+                }
+
+                hostNames.Add(contactPointText);
+                IPHostEntry hostEntry = null;
+                try
+                {
+                    hostEntry = await Dns.GetHostEntryAsync(contactPointText).ConfigureAwait(false);
+                }
+                catch (Exception)
+                {
+                    _logger.Warning($"Host '{contactPointText}' could not be resolved");
+                }
+
+                if (hostEntry != null)
+                {
+                    foreach (var resolvedAddress in hostEntry.AddressList)
+                    {
+                        _metadata.AddHost(new IPEndPoint(resolvedAddress, _config.ProtocolOptions.Port));
+                    }                    
+                }
+            }
+
+            if (_metadata.Hosts.Count == 0)
+            {
+                throw new NoHostAvailableException($"No host name could be resolved, attempted: {string.Join(", ", hostNames)}");                
             }
         }
 
